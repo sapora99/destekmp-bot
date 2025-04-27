@@ -61,7 +61,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_new_question(user_message)
 
 async def ogret(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.from_user.id != OWNER_ID:
+    if update.message.from_user.id != OWNER_IDS:
         await update.message.reply_text("Üzgünüm, sadece yetkili kişi yeni bilgi ekleyebilir.")
         return
 
