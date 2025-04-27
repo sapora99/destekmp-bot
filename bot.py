@@ -1,4 +1,8 @@
+import os
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
+app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
 import json
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
