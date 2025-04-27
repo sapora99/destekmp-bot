@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 # Sadece sahibi /ogret komutunu kullanabilsin
-OWNER_ID = 123456789  # BURAYA KENDİ USER ID'ni koyacaksın
+OWNER_IDS = [1816905363, 7422411288, 2109262579]  # BURAYA KENDİ USER ID'ni koyacaksın
 
 DATA_FILE = "qa_database.json"
 NEW_QUESTIONS_FILE = "new_questions.json"
