@@ -1,74 +1,50 @@
-
+import os
 import json
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Sadece sahibi /ogret komutunu kullanabilsin
-OWNER_ID = 123456789  # BURAYA KENDİ USER ID'ni koyacaksın
-
-DATA_FILE = "qa_database.json"
+# Veritabanını oku
 qa_database = {}
-pending_questions = {}
+if os.path.exists("qa_database.json"):
+    with open("qa_database.json", "r", encoding="utf-8") as f:
+        qa_database = json.load(f)
 
-def load_database():
-    global qa_database
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            qa_database = json.load(f)
-        print("Veritabanı yüklendi.")
-    except FileNotFoundError:
-        print("Veritabanı bulunamadı, sıfırdan başlıyoruz.")
-        qa_database = {}
-
-def save_database():
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(qa_database, f, ensure_ascii=False, indent=2)
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# /start komutu
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Merhaba. Lütfen bir soru sorabilirsiniz.")
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_message = update.message.text.lower()
-    user_id = update.message.from_user.id
+# Gelen mesajı işle
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_message = update.message.text
+    response = qa_database.get(user_message, None)
 
-    if user_id in pending_questions:
-        question = pending_questions.pop(user_id)
-        qa_database[question] = user_message
-        save_database()
-        await update.message.reply_text(f"'{question}' sorusu için cevabınız kaydedildi.")
+    if response:
+        await update.message.reply_text(response)
     else:
-        response = qa_database.get(user_message)
-        if response:
-            await update.message.reply_text(response)
+        await update.message.reply_text("Bilmiyorum.")
+        save_new_question(user_message)
+
+# Yeni soruları kaydet
+def save_new_question(question):
+    filename = "new_questions.json"
+    try:
+        if os.path.exists(filename):
+            with open(filename, "r", encoding="utf-8") as f:
+                data = json.load(f)
         else:
-            await update.message.reply_text("Bu sorunun cevabını bilmiyorum. Eğer yetkiliyseniz /ogret komutunu kullanarak öğretebilirsiniz.")
+            data = []
 
-async def ogret(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.from_user.id != OWNER_ID:
-        await update.message.reply_text("Üzgünüm, sadece yetkili kişi yeni bilgi ekleyebilir.")
-        return
+        if question not in data:
+            data.append(question)
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Yeni soru kaydederken hata oluştu: {e}")
 
-    text = update.message.text[len("/ogret "):].strip()
-    if '|' in text:
-        question, answer = map(str.strip, text.split('|', 1))
-        qa_database[question.lower()] = answer
-        save_database()
-        await update.message.reply_text(f"'{question}' sorusuna artık '{answer}' diyeceğim.")
-    else:
-        user_id = update.message.from_user.id
-        pending_questions[user_id] = update.message.text.strip().lower()
-        await update.message.reply_text("Sadece soruyu yazdınız. Şimdi cevabını yazınız.")
-
-import os
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-
+# Botu başlat
 app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
 
 app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("ogret", ogret))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-print("Bot başlıyor...")
-load_database()
 app.run_polling()
