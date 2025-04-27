@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 from datetime import datetime
 from rapidfuzz import process
 from telegram import Update
@@ -10,8 +11,13 @@ OWNER_IDS = [1816905363, 7422411288, 2109262579]
 
 DATA_FILE = "qa_database.json"
 NEW_QUESTIONS_FILE = "new_questions.json"
+BACKUP_FOLDER = "backups"
 qa_database = {}
 pending_questions = {}
+
+# Backup dizini yoksa oluştur
+if not os.path.exists(BACKUP_FOLDER):
+    os.makedirs(BACKUP_FOLDER)
 
 def load_database():
     global qa_database
@@ -35,10 +41,9 @@ def save_new_question(question):
         else:
             data = []
 
-        if question not in data:
-            data.append(question)
-            with open(NEW_QUESTIONS_FILE, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
+        data.append(question)
+        with open(NEW_QUESTIONS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
     except Exception as e:
         print(f"Yeni soru kaydederken hata oluştu: {e}")
 
@@ -69,6 +74,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("Bu sorunun cevabını bilmiyorum. Eğer yetkiliyseniz /ogret komutunu kullanarak öğretebilirsiniz.")
             save_new_question(user_message)
+            await auto_learn()
 
 async def ogret(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id not in OWNER_IDS:
@@ -106,6 +112,33 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Toplam öğretilmiş soru: {total_questions}\nCevapsız yeni soru: {total_new_questions}"
     )
 
+async def auto_learn():
+    if os.path.exists(NEW_QUESTIONS_FILE):
+        with open(NEW_QUESTIONS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        question_counts = {}
+        for question in data:
+            question_counts[question] = question_counts.get(question, 0) + 1
+
+        for question, count in question_counts.items():
+            if count >= 3 and question not in qa_database:
+                qa_database[question] = {
+                    "answer": "Henüz cevaplanmadı.",
+                    "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                save_database()
+                print(f"Otomatik öğrenildi: {question}")
+
+async def auto_backup():
+    while True:
+        await asyncio.sleep(6 * 60 * 60)  # 6 saat bekle
+        timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M")
+        backup_file = os.path.join(BACKUP_FOLDER, f"qa_database_backup_{timestamp}.json")
+        with open(backup_file, "w", encoding="utf-8") as f:
+            json.dump(qa_database, f, ensure_ascii=False, indent=2)
+        print(f"Backup alındı: {backup_file}")
+
 app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
 
 app.add_handler(CommandHandler("start", start))
@@ -115,4 +148,13 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 print("Bot başlıyor...")
 load_database()
-app.run_polling()
+
+async def main():
+    await asyncio.gather(
+        app.run_polling(),
+        auto_backup()
+    )
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
