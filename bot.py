@@ -1,5 +1,6 @@
 import os
 import json
+from rapidfuzz import process
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -53,8 +54,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_database()
         await update.message.reply_text(f"'{question}' sorusu için cevabınız kaydedildi.")
     else:
-        response = qa_database.get(user_message)
-        if response:
+        questions = list(qa_database.keys())
+        match, score, _ = process.extractOne(user_message, questions)
+
+        if score and score >= 80:
+            response = qa_database[match]
             await update.message.reply_text(response)
         else:
             await update.message.reply_text("Bu sorunun cevabını bilmiyorum. Eğer yetkiliyseniz /ogret komutunu kullanarak öğretebilirsiniz.")
