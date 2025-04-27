@@ -1,8 +1,4 @@
-import os
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
 import json
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -63,7 +59,11 @@ async def ogret(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pending_questions[user_id] = update.message.text.strip().lower()
         await update.message.reply_text("Sadece soruyu yazdınız. Şimdi cevabını yazınız.")
 
-app = ApplicationBuilder().token("BOT_TOKEN").build()
+import os
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+
+app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("ogret", ogret))
