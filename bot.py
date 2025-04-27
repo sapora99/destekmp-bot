@@ -1,11 +1,12 @@
 import os
 import json
+from datetime import datetime
 from rapidfuzz import process
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 # Sadece sahibi /ogret komutunu kullanabilsin
-OWNER_IDS = [1816905363, 7422411288, 2109262579]  # BURAYA KENDİ USER ID'ni koyacaksın
+OWNER_IDS = [1816905363, 7422411288, 2109262579]
 
 DATA_FILE = "qa_database.json"
 NEW_QUESTIONS_FILE = "new_questions.json"
@@ -50,7 +51,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_id in pending_questions:
         question = pending_questions.pop(user_id)
-        qa_database[question] = user_message
+        qa_database[question] = {
+            "answer": user_message,
+            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
         save_database()
         await update.message.reply_text(f"'{question}' sorusu için cevabınız kaydedildi.")
     else:
@@ -58,8 +62,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         match, score, _ = process.extractOne(user_message, questions)
 
         if score and score >= 80:
-            response = qa_database[match]
+            response = qa_database[match]["answer"]
             await update.message.reply_text(response)
+        elif score and score >= 60:
+            await update.message.reply_text(f"Şunu mu demek istediniz: {match}")
         else:
             await update.message.reply_text("Bu sorunun cevabını bilmiyorum. Eğer yetkiliyseniz /ogret komutunu kullanarak öğretebilirsiniz.")
             save_new_question(user_message)
@@ -72,7 +78,10 @@ async def ogret(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text[len("/ogret "):].strip()
     if '|' in text:
         question, answer = map(str.strip, text.split('|', 1))
-        qa_database[question.lower()] = answer
+        qa_database[question.lower()] = {
+            "answer": answer,
+            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
         save_database()
         await update.message.reply_text(f"'{question}' sorusuna artık '{answer}' diyeceğim.")
     else:
@@ -80,10 +89,28 @@ async def ogret(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pending_questions[user_id] = update.message.text.strip().lower()
         await update.message.reply_text("Sadece soruyu yazdınız. Şimdi cevabını yazınız.")
 
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.from_user.id not in OWNER_IDS:
+        await update.message.reply_text("Bu komutu sadece yetkililer kullanabilir.")
+        return
+
+    total_questions = len(qa_database)
+    if os.path.exists(NEW_QUESTIONS_FILE):
+        with open(NEW_QUESTIONS_FILE, "r", encoding="utf-8") as f:
+            new_questions = json.load(f)
+        total_new_questions = len(new_questions)
+    else:
+        total_new_questions = 0
+
+    await update.message.reply_text(
+        f"Toplam öğretilmiş soru: {total_questions}\nCevapsız yeni soru: {total_new_questions}"
+    )
+
 app = ApplicationBuilder().token(os.getenv("BOT_TOKEN")).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("ogret", ogret))
+app.add_handler(CommandHandler("admin", admin))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 print("Bot başlıyor...")
