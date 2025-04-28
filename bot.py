@@ -1,10 +1,16 @@
 import os
 import json
 import asyncio
+import random
 from datetime import datetime
 from rapidfuzz import process
+from textblob import TextBlob
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import openai
+
+# OpenAI API Key
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Sadece sahibi /ogret komutunu kullanabilsin
 OWNER_IDS = [1816905363, 7422411288, 2109262579]
@@ -12,12 +18,14 @@ OWNER_IDS = [1816905363, 7422411288, 2109262579]
 DATA_FILE = "qa_database.json"
 NEW_QUESTIONS_FILE = "new_questions.json"
 BACKUP_FOLDER = "backups"
+USERS_FOLDER = "users"
 qa_database = {}
 pending_questions = {}
 
-# Backup dizini yoksa oluştur
-if not os.path.exists(BACKUP_FOLDER):
-    os.makedirs(BACKUP_FOLDER)
+# Klasörleri yoksa oluştur
+for folder in [BACKUP_FOLDER, USERS_FOLDER]:
+    if not os.path.exists(folder):
+        os.makedirs(folder)
 
 def load_database():
     global qa_database
@@ -33,6 +41,46 @@ def save_database():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(qa_database, f, ensure_ascii=False, indent=2)
 
+def save_user_profile(user_id, message):
+    user_file = os.path.join(USERS_FOLDER, f"{user_id}.json")
+    profile = []
+    if os.path.exists(user_file):
+        with open(user_file, "r", encoding="utf-8") as f:
+            profile = json.load(f)
+    profile.append({"message": message, "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+    with open(user_file, "w", encoding="utf-8") as f:
+        json.dump(profile, f, ensure_ascii=False, indent=2)
+
+def analyze_sentiment(message):
+    blob = TextBlob(message)
+    polarity = blob.sentiment.polarity
+    if polarity > 0.3:
+        return "Neşeli"
+    elif polarity < -0.3:
+        return "Üzgün"
+    else:
+        return "Nötr"
+
+def suggest_related_topics(message):
+    keywords = ["hava", "spor", "yemek", "gezi", "teknoloji", "eğitim"]
+    suggestions = []
+    for word in keywords:
+        if word in message:
+            suggestions.append(f"{word} hakkında daha fazlasını öğrenmek ister misin?")
+    return suggestions
+
+async def generate_chatgpt_response(question):
+    try:
+        response = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=question,
+            max_tokens=150
+        )
+        return response.choices[0].text.strip()
+    except Exception as e:
+        print(f"ChatGPT hatası: {e}")
+        return None
+
 def save_new_question(question):
     try:
         if os.path.exists(NEW_QUESTIONS_FILE):
@@ -40,7 +88,6 @@ def save_new_question(question):
                 data = json.load(f)
         else:
             data = []
-
         data.append(question)
         with open(NEW_QUESTIONS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
@@ -53,6 +100,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text.lower()
     user_id = update.message.from_user.id
+
+    save_user_profile(user_id, user_message)
 
     if user_id in pending_questions:
         question = pending_questions.pop(user_id)
@@ -72,7 +121,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif score and score >= 60:
             await update.message.reply_text(f"Şunu mu demek istediniz: {match}")
         else:
-            await update.message.reply_text("Bu sorunun cevabını bilmiyorum. Eğer yetkiliyseniz /ogret komutunu kullanarak öğretebilirsiniz.")
+            sentiment = analyze_sentiment(user_message)
+            suggestions = suggest_related_topics(user_message)
+            suggestion_text = "\n".join(suggestions) if suggestions else ""
+            gpt_response = await generate_chatgpt_response(user_message)
+
+            if gpt_response:
+                await update.message.reply_text(f"ChatGPT Cevap: {gpt_response}\n(Duygu: {sentiment})\n{suggestion_text}")
+                qa_database[user_message] = {
+                    "answer": gpt_response,
+                    "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                save_database()
+            else:
+                await update.message.reply_text("Bu sorunun cevabını bilmiyorum. Eğer yetkiliyseniz /ogret komutunu kullanarak öğretebilirsiniz.")
             save_new_question(user_message)
             await auto_learn()
 
